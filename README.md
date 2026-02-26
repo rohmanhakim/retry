@@ -1,5 +1,7 @@
 # retry
 
+[![codecov](https://codecov.io/github/rohmanhakim/retry/branch/master/graph/badge.svg?token=eYWKQEsSzz)](https://codecov.io/github/rohmanhakim/retry)
+
 A simple, standalone Go package for retrying operations with exponential backoff and jitter support. Zero external dependencies.
 
 ## Features
