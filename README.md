@@ -11,6 +11,7 @@ A simple, standalone Go package for retrying operations with exponential backoff
 - **Exponential Backoff**: Configurable backoff with multiplier and max duration
 - **Jitter Support**: Add randomness to backoff delays to avoid thundering herd
 - **Custom Retry Policies**: Control which errors should be retried automatically
+- **Context Cancellation**: Support for graceful cancellation during backoff delays
 - **Debug Logging**: Optional logging interface for observability
 - **Zero Dependencies**: Uses only Go standard library
 
@@ -26,6 +27,7 @@ go get github.com/rohmanhakim/retrier
 package main
 
 import (
+    "context"
     "fmt"
     "time"
     
@@ -69,14 +71,30 @@ func main() {
         return "success", nil
     }
     
-    // Execute with retry
-    result := retrier.Retry(params, retrier.NewNoOpLogger(), fn)
+    // Execute with retry (context can be cancelled to abort mid-backoff)
+    ctx := context.Background()
+    result := retrier.Retry(ctx, params, retrier.NewNoOpLogger(), fn)
     
     if result.IsSuccess() {
         fmt.Printf("Success: %s (attempts: %d)\n", result.Value(), result.Attempts())
     } else {
         fmt.Printf("Failed: %v (attempts: %d)\n", result.Err(), result.Attempts())
     }
+}
+```
+
+## Context Cancellation
+
+The retry operation respects context cancellation. If the context is cancelled during a backoff delay, the operation stops immediately:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+result := retrier.Retry(ctx, params, logger, fn)
+
+if errors.Is(result.Err(), context.Canceled) {
+    // Handle cancellation
 }
 ```
 
@@ -186,7 +204,7 @@ type DebugLogger interface {
 
 ```go
 // Retry executes fn with retry logic
-func Retry[T any](retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T]
+func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T]
 
 // NewRetryParam creates retry configuration
 func NewRetryParam(baseDelay, jitter time.Duration, randomSeed int64, maxAttempts int, backoffParam BackoffParam) RetryParam

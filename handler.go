@@ -15,9 +15,13 @@ import (
 // Returns a Result containing the value (if successful), error (if failed),
 // and the number of attempts made.
 //
+// The ctx parameter allows cancellation of the retry operation. If the context
+// is cancelled during a backoff delay, the function returns immediately with
+// ErrContextCancelled.
+//
 // The logger parameter provides debug logging capabilities. When debug mode is
 // disabled (NoOpLogger), there is zero overhead from logging.
-func Retry[T any](retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T] {
+func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T] {
 	var lastErr RetryableError
 	var zero T
 
@@ -44,7 +48,7 @@ func Retry[T any](retryParam RetryParam, logger DebugLogger, fn func() (T, Retry
 		if err == nil {
 			// Log successful retry if debug enabled
 			if logger.Enabled() {
-				logger.LogRetry(context.TODO(), attempt, retryParam.MaxAttempts, 0, nil)
+				logger.LogRetry(ctx, attempt, retryParam.MaxAttempts, 0, nil)
 			}
 			return NewSuccessResult(result, attempt)
 		}
@@ -76,16 +80,29 @@ func Retry[T any](retryParam RetryParam, logger DebugLogger, fn func() (T, Retry
 
 		// Log retry attempt if debug enabled
 		if logger.Enabled() {
-			logger.LogRetry(context.TODO(), attempt, retryParam.MaxAttempts, backoffDelay, err)
+			logger.LogRetry(ctx, attempt, retryParam.MaxAttempts, backoffDelay, err)
 		}
 
-		// Sleep for the computed delay
-		time.Sleep(backoffDelay)
+		// Wait for backoff delay or context cancellation
+		select {
+		case <-ctx.Done():
+			return Result[T]{
+				value: zero,
+				err: NewRetryError(
+					ErrContextCancelled,
+					fmt.Sprintf("context cancelled after %d attempts", attempt),
+					RetryPolicyNever,
+					ctx.Err(),
+				),
+				attempts: attempt,
+			}
+		case <-time.After(backoffDelay):
+		}
 	}
 
 	// Log exhausted attempts if debug enabled
 	if logger.Enabled() {
-		logger.LogRetry(context.TODO(), retryParam.MaxAttempts, retryParam.MaxAttempts, 0, lastErr)
+		logger.LogRetry(ctx, retryParam.MaxAttempts, retryParam.MaxAttempts, 0, lastErr)
 	}
 
 	// Return failure result when max attempts are exhausted

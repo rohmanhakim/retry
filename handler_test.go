@@ -89,7 +89,7 @@ func TestRetry_SuccessOnFirstAttempt(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -140,7 +140,7 @@ func TestRetry_PassParameter(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -179,7 +179,7 @@ func TestRetry_SuccessAfterRetries(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -240,7 +240,7 @@ func TestRetry_NonRetryableErrorReturnsImmediately(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -285,7 +285,7 @@ func TestRetry_ExhaustedAttempts(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error after exhausting attempts, got nil")
@@ -338,7 +338,7 @@ func TestRetry_MaxAttemptsLessThanOne(t *testing.T) {
 	)
 
 	var retryErr *retrier.RetryError
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error for MaxAttempts < 1, got nil")
@@ -390,7 +390,7 @@ func TestRetry_GenericTypePointer(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -431,7 +431,7 @@ func TestRetry_GenericTypeSlice(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -478,7 +478,7 @@ func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -516,7 +516,7 @@ func TestRetry_DeterministicWithSameSeed(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -552,7 +552,7 @@ func TestRetry_SuccessAfterManyFailures(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -585,7 +585,7 @@ func TestRetry_ExhaustedErrorIsRetryable(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -616,7 +616,7 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -652,7 +652,7 @@ func TestNewRetryParam(t *testing.T) {
 		return "success", nil
 	}
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("unexpected error: %v", result.Err())
@@ -684,7 +684,7 @@ func BenchmarkRetry(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = retrier.Retry(params, noopLogger, fn)
+		_ = retrier.Retry(context.Background(), params, noopLogger, fn)
 	}
 }
 
@@ -701,7 +701,7 @@ func TestRetry_NilErrorTypeSafety(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected nil error, got: %v", result.Err())
@@ -730,7 +730,7 @@ func TestRetryErrorType(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
 	if result.IsSuccess() {
 		t.Fatal("expected error after exhausting attempts")
 	}
@@ -760,7 +760,7 @@ func TestRetry_DisabledLogger(t *testing.T) {
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(params, mock, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -769,5 +769,72 @@ func TestRetry_DisabledLogger(t *testing.T) {
 	// Debug logging assertions - disabled logger should not record any entries
 	if len(mock.logRetryCalls) != 0 {
 		t.Errorf("expected 0 retry log calls when logger disabled, got %d", len(mock.logRetryCalls))
+	}
+}
+
+// TestRetry_ContextCancellation verifies that context cancellation stops retry loop
+func TestRetry_ContextCancellation(t *testing.T) {
+	callCount := 0
+	fn := func() (string, retrier.RetryableError) {
+		callCount++
+		return "", &mockError{
+			msg:       "transient error",
+			retryable: true,
+		}
+	}
+
+	// Use a long backoff to ensure we can cancel during the wait
+	params := retrier.NewRetryParam(
+		10*time.Millisecond,
+		5*time.Millisecond,
+		42,
+		10,
+		retrier.NewBackoffParam(
+			1*time.Second, // Long initial duration
+			2.0,
+			30*time.Second,
+		),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel the context after a short delay
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	result := retrier.Retry(ctx, params, noopLogger, fn)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Should return ErrContextCancelled
+	var retryErr *retrier.RetryError
+	if !errors.As(result.Err(), &retryErr) {
+		t.Fatalf("expected RetryError, got: %T", result.Err())
+	}
+	if retryErr.Cause != retrier.ErrContextCancelled {
+		t.Fatalf("expected error cause 'ErrContextCancelled', got: '%s'", retryErr.Cause)
+	}
+
+	// Should have made at least one attempt but not all 10
+	if result.Attempts() < 1 {
+		t.Fatal("expected at least 1 attempt")
+	}
+	if result.Attempts() >= 10 {
+		t.Fatal("expected fewer than 10 attempts due to cancellation")
+	}
+
+	// Verify it stopped early (callCount should equal attempts)
+	if callCount != result.Attempts() {
+		t.Fatalf("expected callCount (%d) to equal attempts (%d)", callCount, result.Attempts())
+	}
+
+	// Verify the wrapped error is context.Canceled
+	unwrapped := retryErr.Unwrap()
+	if unwrapped != context.Canceled {
+		t.Fatalf("expected unwrapped error to be context.Canceled, got: %v", unwrapped)
 	}
 }

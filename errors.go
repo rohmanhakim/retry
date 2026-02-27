@@ -40,6 +40,9 @@ const (
 
 	// ErrExhaustedAttempts indicates that all retry attempts were exhausted.
 	ErrExhaustedAttempts RetryErrorCause = "exhausted attempt"
+
+	// ErrContextCancelled indicates that the context was cancelled during retry.
+	ErrContextCancelled RetryErrorCause = "context cancelled"
 )
 
 // RetryError represents an error that occurred during retry attempts.
