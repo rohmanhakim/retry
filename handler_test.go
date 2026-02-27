@@ -13,13 +13,13 @@ import (
 // noopLogger is a NoOpLogger instance for tests
 var noopLogger = retrier.NewNoOpLogger()
 
-// defaultBackoffParam returns a default backoff parameter for tests
-func defaultBackoffParam() retrier.BackoffParam {
-	return retrier.NewBackoffParam(
-		10*time.Millisecond,
-		2.0,
-		30*time.Second,
-	)
+// defaultTestOpts returns default options for tests
+func defaultTestOpts() []retrier.RetryOption {
+	return []retrier.RetryOption{
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
 }
 
 // mockError is a mock implementation of retrier.RetryableError for testing
@@ -81,13 +81,12 @@ func TestRetry_SuccessOnFirstAttempt(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		10*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(10*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -130,13 +129,12 @@ func TestRetry_PassParameter(t *testing.T) {
 		return fmt.Sprintf("%s, world!", toPrint), nil
 	}
 
-	params := retrier.NewRetryParam(
-		10*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(10*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -167,13 +165,12 @@ func TestRetry_SuccessAfterRetries(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -226,13 +223,12 @@ func TestRetry_NonRetryableErrorReturnsImmediately(t *testing.T) {
 		return "", expectedErr
 	}
 
-	params := retrier.NewRetryParam(
-		10*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(10*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -269,13 +265,12 @@ func TestRetry_ExhaustedAttempts(t *testing.T) {
 	}
 
 	maxAttempts := 3
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		maxAttempts,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(maxAttempts),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error after exhausting attempts, got nil")
@@ -319,14 +314,12 @@ func TestRetry_MaxAttemptsLessThanOne(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		10*time.Millisecond,
-		0,
-		defaultBackoffParam(),
-	)
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(0),
+	}
 
 	var retryErr *retrier.RetryError
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error for MaxAttempts < 1, got nil")
@@ -370,13 +363,12 @@ func TestRetry_GenericTypePointer(t *testing.T) {
 		return &Data{Value: 42}, nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -409,13 +401,12 @@ func TestRetry_GenericTypeSlice(t *testing.T) {
 		return []int{1, 2, 3}, nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -454,13 +445,12 @@ func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 		}
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -492,13 +482,15 @@ func TestRetry_BackoffDelayWithinBounds(t *testing.T) {
 	}
 
 	jitter := 5 * time.Millisecond
-	params := retrier.NewRetryParam(
-		jitter,
-		5,
-		defaultBackoffParam(),
-	)
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(jitter),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -538,13 +530,12 @@ func TestRetry_SuccessAfterManyFailures(t *testing.T) {
 		return "eventual success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		2*time.Millisecond,
-		maxAttempts,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(maxAttempts),
+		retrier.WithJitter(2*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -571,13 +562,12 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 		return "", originalErr
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		2,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(2),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -598,20 +588,23 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 	}
 }
 
-// TestNewRetryParam verifies the constructor creates RetryParam correctly
-func TestNewRetryParam(t *testing.T) {
-	jitter := 50 * time.Millisecond
-	maxAttempts := 5
-
-	params := retrier.NewRetryParam(jitter, maxAttempts, defaultBackoffParam())
-
+// TestRetry_FunctionalOptions verifies that functional options work correctly
+func TestRetry_FunctionalOptions(t *testing.T) {
 	callCount := 0
 	fn := func() (string, error) {
 		callCount++
 		return "success", nil
 	}
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(50 * time.Millisecond),
+		retrier.WithInitialDuration(1 * time.Second),
+		retrier.WithMultiplier(2.5),
+		retrier.WithMaxDuration(5 * time.Minute),
+	}
+
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("unexpected error: %v", result.Err())
@@ -633,15 +626,14 @@ func BenchmarkRetry(b *testing.B) {
 		return 42, nil
 	}
 
-	params := retrier.NewRetryParam(
-		1*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(1*time.Millisecond),
 	)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = retrier.Retry(context.Background(), params, noopLogger, fn)
+		_ = retrier.Retry(context.Background(), noopLogger, fn, opts...)
 	}
 }
 
@@ -650,13 +642,12 @@ func TestRetry_NilErrorTypeSafety(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected nil error, got: %v", result.Err())
@@ -677,13 +668,12 @@ func TestRetryErrorType(t *testing.T) {
 		}
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		1,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(1),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 	if result.IsSuccess() {
 		t.Fatal("expected error after exhausting attempts")
 	}
@@ -705,13 +695,12 @@ func TestRetry_DisabledLogger(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -735,15 +724,13 @@ func TestRetry_ContextCancellation(t *testing.T) {
 	}
 
 	// Use a long backoff to ensure we can cancel during the wait
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		10,
-		retrier.NewBackoffParam(
-			1*time.Second, // Long initial duration
-			2.0,
-			30*time.Second,
-		),
-	)
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(10),
+		retrier.WithJitter(5 * time.Millisecond),
+		retrier.WithInitialDuration(1 * time.Second),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -753,7 +740,7 @@ func TestRetry_ContextCancellation(t *testing.T) {
 		cancel()
 	}()
 
-	result := retrier.Retry(ctx, params, noopLogger, fn)
+	result := retrier.Retry(ctx, noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -798,11 +785,13 @@ func TestRetry_JitterRandomness(t *testing.T) {
 	// Collect backoff delays from multiple retry operations
 	delays := make([]time.Duration, 0, 100)
 	jitter := 10 * time.Millisecond
-	params := retrier.NewRetryParam(
-		jitter,
-		2,
-		retrier.NewBackoffParam(10*time.Millisecond, 2.0, 30*time.Second),
-	)
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(2),
+		retrier.WithJitter(jitter),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
 
 	// Run multiple retry operations and collect first backoff delays
 	for i := 0; i < 100; i++ {
@@ -816,12 +805,12 @@ func TestRetry_JitterRandomness(t *testing.T) {
 			return "success", nil
 		}
 
-		retrier.Retry(context.Background(), params, mock, fn)
+		retrier.Retry(context.Background(), mock, fn, opts...)
 
 		// Enable logging to capture backoff
 		mock.enabled = true
 		callCount = 0
-		result := retrier.Retry(context.Background(), params, mock, fn)
+		result := retrier.Retry(context.Background(), mock, fn, opts...)
 		if result.IsSuccess() && len(mock.logRetryCalls) > 0 {
 			delays = append(delays, mock.logRetryCalls[0].backoff)
 		}
@@ -859,13 +848,12 @@ func TestRetry_StandardError_AutoRetry(t *testing.T) {
 		return "success", nil
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -891,14 +879,16 @@ func TestRetry_StandardError_DefaultRetryPolicyNever(t *testing.T) {
 		return "", errors.New("standard error")
 	}
 
-	params := retrier.RetryParam{
-		Jitter:             5 * time.Millisecond,
-		MaxAttempts:        5,
-		BackoffParam:       defaultBackoffParam(),
-		DefaultRetryPolicy: retrier.RetryPolicyNever,
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5 * time.Millisecond),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+		retrier.WithRetryPolicy(retrier.RetryPolicyNever),
 	}
 
-	result := retrier.Retry(context.Background(), params, mock, fn)
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -935,14 +925,16 @@ func TestRetry_RetryableError_TakesPrecedenceOverDefault(t *testing.T) {
 	}
 
 	// Even with DefaultRetryPolicy=Never, RetryableError with Auto should be retried
-	params := retrier.RetryParam{
-		Jitter:             5 * time.Millisecond,
-		MaxAttempts:        5,
-		BackoffParam:       defaultBackoffParam(),
-		DefaultRetryPolicy: retrier.RetryPolicyNever,
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5 * time.Millisecond),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+		retrier.WithRetryPolicy(retrier.RetryPolicyNever),
 	}
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -969,13 +961,12 @@ func TestRetry_RetryableErrorNever_WithDefaultAuto(t *testing.T) {
 	}
 
 	// Even with DefaultRetryPolicy=Auto, RetryableError with Manual should NOT be retried
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -1005,13 +996,12 @@ func TestRetry_MixedStandardAndRetryableErrors(t *testing.T) {
 		}
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -1030,13 +1020,12 @@ func TestRetry_StandardError_ExhaustedAttempts(t *testing.T) {
 		return "", errors.New("persistent standard error")
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		3,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(3),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsSuccess() {
 		t.Fatal("expected error, got nil")
@@ -1082,13 +1071,12 @@ func TestRetry_ZeroFrictionHTTPExample(t *testing.T) {
 		return httpGet("https://api.example.com/data")
 	}
 
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		5,
-		defaultBackoffParam(),
+	opts := append(defaultTestOpts(),
+		retrier.WithMaxAttempts(5),
+		retrier.WithJitter(5*time.Millisecond),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
@@ -1098,5 +1086,24 @@ func TestRetry_ZeroFrictionHTTPExample(t *testing.T) {
 	}
 	if result.Attempts() != 3 {
 		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
+	}
+}
+
+// TestRetry_DefaultValues verifies that defaults are applied when no options are provided
+func TestRetry_DefaultValues(t *testing.T) {
+	callCount := 0
+	fn := func() (string, error) {
+		callCount++
+		return "success", nil
+	}
+
+	// No options - should use all defaults
+	result := retrier.Retry(context.Background(), noopLogger, fn)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+	if result.Attempts() != 1 {
+		t.Fatalf("expected 1 attempt, got: %d", result.Attempts())
 	}
 }

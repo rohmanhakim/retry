@@ -9,6 +9,7 @@ A simple, standalone Go package for retrying operations with exponential backoff
 
 - **Generic API**: Works with any return type using Go generics
 - **Zero Friction**: Accepts standard `error` - works seamlessly with stdlib and third-party packages
+- **Functional Options**: Clean, self-documenting configuration with sensible defaults
 - **Exponential Backoff**: Configurable backoff with multiplier and max duration
 - **Jitter Support**: Add randomness to backoff delays to avoid thundering herd
 - **Flexible Retry Policies**: Control which errors should be retried automatically
@@ -38,27 +39,20 @@ import (
 )
 
 func main() {
-    // Configure retry parameters
-    backoffParam := retrier.NewBackoffParam(
-        1*time.Second,  // Initial delay
-        2.0,            // Multiplier (doubles each time)
-        30*time.Second, // Maximum delay
-    )
-    
-    params := retrier.NewRetryParam(
-        50*time.Millisecond,  // Jitter (random delay added to backoff)
-        5,                    // Max attempts
-        backoffParam,
-    )
-    
     // Define the operation to retry - just return standard errors!
     fn := func() (*http.Response, error) {
         return http.Get("https://api.example.com/data")
     }
     
-    // Execute with retry (context can be cancelled to abort mid-backoff)
+    // Execute with retry using functional options
     ctx := context.Background()
-    result := retrier.Retry(ctx, params, retrier.NewNoOpLogger(), fn)
+    result := retrier.Retry(ctx, retrier.NewNoOpLogger(), fn,
+        retrier.WithMaxAttempts(5),
+        retrier.WithJitter(100*time.Millisecond),
+        retrier.WithInitialDuration(1*time.Second),
+        retrier.WithMultiplier(2.0),
+        retrier.WithMaxDuration(30*time.Second),
+    )
     
     if result.IsSuccess() {
         fmt.Printf("Success: %v (attempts: %d)\n", result.Value(), result.Attempts())
@@ -66,6 +60,42 @@ func main() {
         fmt.Printf("Failed: %v (attempts: %d)\n", result.Err(), result.Attempts())
     }
 }
+```
+
+## Configuration Options
+
+### Functional Options
+
+The `Retry` function accepts functional options for configuration. All options have sensible defaults:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `WithMaxAttempts(n int)` | Maximum number of retry attempts | 3 |
+| `WithJitter(d time.Duration)` | Random delay added to backoff | 0 (no jitter) |
+| `WithInitialDuration(d time.Duration)` | Initial backoff duration | 1 second |
+| `WithMultiplier(m float64)` | Backoff multiplier | 2.0 |
+| `WithMaxDuration(d time.Duration)` | Maximum backoff duration | 1 minute |
+| `WithRetryPolicy(p RetryPolicy)` | Default retry policy for standard errors | RetryPolicyAuto |
+
+### Using Defaults
+
+```go
+// Simple case - just want retries with defaults (3 attempts, 1s initial backoff, 2x multiplier)
+result := retrier.Retry(ctx, logger, fn)
+```
+
+### Custom Configuration
+
+```go
+// All options customized
+result := retrier.Retry(ctx, logger, fn,
+    retrier.WithMaxAttempts(10),
+    retrier.WithJitter(50*time.Millisecond),
+    retrier.WithInitialDuration(100*time.Millisecond),
+    retrier.WithMultiplier(1.5),
+    retrier.WithMaxDuration(5*time.Minute),
+    retrier.WithRetryPolicy(retrier.RetryPolicyNever),
+)
 ```
 
 ## Error Handling
@@ -111,16 +141,13 @@ fn := func() (string, error) {
 
 ### Default Retry Policy
 
-Configure the default behavior for standard errors via `RetryParam.DefaultRetryPolicy`:
+Configure the default behavior for standard errors:
 
 ```go
 // Fail-fast mode: Only retry errors that explicitly implement RetryableError with RetryPolicyAuto
-params := retrier.RetryParam{
-    Jitter:              50 * time.Millisecond,
-    MaxAttempts:         5,
-    BackoffParam:        backoffParam,
-    DefaultRetryPolicy:  retrier.RetryPolicyNever,  // Standard errors won't be retried
-}
+result := retrier.Retry(ctx, logger, fn,
+    retrier.WithRetryPolicy(retrier.RetryPolicyNever),  // Standard errors won't be retried
+)
 ```
 
 ## Retry Policies
@@ -150,7 +177,10 @@ The retry operation respects context cancellation. If the context is cancelled d
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-result := retrier.Retry(ctx, params, logger, fn)
+result := retrier.Retry(ctx, logger, fn,
+    retrier.WithMaxAttempts(10),
+    retrier.WithInitialDuration(1*time.Second),
+)
 
 if errors.Is(result.Err(), context.Canceled) {
     // Handle cancellation
@@ -200,24 +230,11 @@ type RetryableError interface {
     RetryPolicy() RetryPolicy
 }
 
-// RetryParam holds retry configuration
-type RetryParam struct {
-    Jitter              time.Duration
-    MaxAttempts         int
-    BackoffParam        BackoffParam
-    DefaultRetryPolicy  RetryPolicy  // Default: RetryPolicyAuto
-}
-
 // Result holds the outcome of a retry operation
 type Result[T any] struct {
     // Contains value on success, zero value on failure
     // Contains error on failure, nil on success
     // Number of attempts made
-}
-
-// BackoffParam holds exponential backoff configuration
-type BackoffParam struct {
-    // Initial duration, multiplier, max duration
 }
 
 // DebugLogger interface for logging
@@ -232,13 +249,15 @@ type DebugLogger interface {
 ```go
 // Retry executes fn with retry logic
 // Accepts standard error - works with any function!
-func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, error)) Result[T]
+func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error), opts ...RetryOption) Result[T]
 
-// NewRetryParam creates retry configuration with DefaultRetryPolicy=Auto
-func NewRetryParam(jitter time.Duration, maxAttempts int, backoffParam BackoffParam) RetryParam
-
-// NewBackoffParam creates backoff configuration
-func NewBackoffParam(initialDuration time.Duration, multiplier float64, maxDuration time.Duration) BackoffParam
+// Functional options
+func WithMaxAttempts(n int) RetryOption
+func WithJitter(d time.Duration) RetryOption
+func WithInitialDuration(d time.Duration) RetryOption
+func WithMultiplier(m float64) RetryOption
+func WithMaxDuration(d time.Duration) RetryOption
+func WithRetryPolicy(p RetryPolicy) RetryOption
 
 // NewNoOpLogger creates a no-op logger (zero overhead)
 func NewNoOpLogger() *NoOpLogger

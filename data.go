@@ -2,29 +2,84 @@ package retrier
 
 import "time"
 
-// RetryParam holds the parameters for retry logic.
-// These parameters are passed from outside (e.g., config) and should not
-// be known by the retry handler internally.
-type RetryParam struct {
-	Jitter             time.Duration
-	MaxAttempts        int
-	BackoffParam       BackoffParam
-	DefaultRetryPolicy RetryPolicy // Policy applied to standard errors (default: RetryPolicyAuto)
+// retryConfig holds the internal configuration for retry logic.
+// It is populated via functional options.
+type retryConfig struct {
+	jitter             time.Duration
+	maxAttempts        int
+	backoff            backoffConfig
+	defaultRetryPolicy RetryPolicy
 }
 
-// NewRetryParam creates a new RetryParam with the given settings.
-// DefaultRetryPolicy is set to RetryPolicyAuto, meaning standard errors
-// will be automatically retried with exponential backoff.
-func NewRetryParam(
-	jitter time.Duration,
-	maxAttempts int,
-	backoffParam BackoffParam,
-) RetryParam {
-	return RetryParam{
-		Jitter:             jitter,
-		MaxAttempts:        maxAttempts,
-		BackoffParam:       backoffParam,
-		DefaultRetryPolicy: RetryPolicyAuto,
+// backoffConfig holds the internal configuration for exponential backoff.
+type backoffConfig struct {
+	initialDuration time.Duration
+	multiplier      float64
+	maxDuration     time.Duration
+}
+
+// defaults returns a retryConfig with sensible default values.
+func defaults() retryConfig {
+	return retryConfig{
+		maxAttempts:        3,
+		jitter:             0,
+		defaultRetryPolicy: RetryPolicyAuto,
+		backoff: backoffConfig{
+			initialDuration: 1 * time.Second,
+			multiplier:      2.0,
+			maxDuration:     1 * time.Minute,
+		},
+	}
+}
+
+// RetryOption is a functional option for configuring retry behavior.
+type RetryOption func(*retryConfig)
+
+// WithMaxAttempts sets the maximum number of retry attempts.
+// Default is 3.
+func WithMaxAttempts(n int) RetryOption {
+	return func(c *retryConfig) {
+		c.maxAttempts = n
+	}
+}
+
+// WithJitter sets the maximum random duration added to backoff delays.
+// This helps avoid thundering herd problems. Default is 0 (no jitter).
+func WithJitter(d time.Duration) RetryOption {
+	return func(c *retryConfig) {
+		c.jitter = d
+	}
+}
+
+// WithInitialDuration sets the initial backoff duration.
+// Default is 1 second.
+func WithInitialDuration(d time.Duration) RetryOption {
+	return func(c *retryConfig) {
+		c.backoff.initialDuration = d
+	}
+}
+
+// WithMultiplier sets the backoff multiplier.
+// Each subsequent delay is multiplied by this value. Default is 2.0.
+func WithMultiplier(m float64) RetryOption {
+	return func(c *retryConfig) {
+		c.backoff.multiplier = m
+	}
+}
+
+// WithMaxDuration sets the maximum backoff duration.
+// Default is 1 minute.
+func WithMaxDuration(d time.Duration) RetryOption {
+	return func(c *retryConfig) {
+		c.backoff.maxDuration = d
+	}
+}
+
+// WithRetryPolicy sets the default retry policy for standard errors.
+// Default is RetryPolicyAuto (standard errors are retried automatically).
+func WithRetryPolicy(p RetryPolicy) RetryOption {
+	return func(c *retryConfig) {
+		c.defaultRetryPolicy = p
 	}
 }
 

@@ -22,14 +22,36 @@ import (
 // The logger parameter provides debug logging capabilities. When debug mode is
 // disabled (NoOpLogger), there is zero overhead from logging.
 //
+// opts are functional options to configure retry behavior:
+//   - WithMaxAttempts(n int): Maximum retry attempts (default: 3)
+//   - WithJitter(d time.Duration): Random delay added to backoff (default: 0)
+//   - WithInitialDuration(d time.Duration): Initial backoff duration (default: 1s)
+//   - WithMultiplier(m float64): Backoff multiplier (default: 2.0)
+//   - WithMaxDuration(d time.Duration): Maximum backoff duration (default: 1m)
+//   - WithRetryPolicy(p RetryPolicy): Default retry policy for standard errors (default: RetryPolicyAuto)
+//
 // Error handling:
 //   - If the error implements RetryableError, its RetryPolicy() is used
-//   - Standard errors use DefaultRetryPolicy from RetryParam (defaults to RetryPolicyAuto)
-func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, error)) Result[T] {
+//   - Standard errors use the configured DefaultRetryPolicy (defaults to RetryPolicyAuto)
+//
+// Example:
+//
+//	result := retrier.Retry(ctx, logger, fn,
+//	    retrier.WithMaxAttempts(5),
+//	    retrier.WithJitter(100*time.Millisecond),
+//	    retrier.WithInitialDuration(1*time.Second),
+//	)
+func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error), opts ...RetryOption) Result[T] {
+	// Apply defaults and options
+	config := defaults()
+	for _, opt := range opts {
+		opt(&config)
+	}
+
 	var lastErr error
 	var zero T
 
-	if retryParam.MaxAttempts < 1 {
+	if config.maxAttempts < 1 {
 		return Result[T]{
 			value: zero,
 			err: NewRetryError(
@@ -42,14 +64,14 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		}
 	}
 
-	for attempt := 1; attempt <= retryParam.MaxAttempts; attempt++ {
+	for attempt := 1; attempt <= config.maxAttempts; attempt++ {
 		result, err := fn()
 
 		// Success case: no error
 		if err == nil {
 			// Log successful retry if debug enabled
 			if logger.Enabled() {
-				logger.LogRetry(ctx, attempt, retryParam.MaxAttempts, 0, nil)
+				logger.LogRetry(ctx, attempt, config.maxAttempts, 0, nil)
 			}
 			return NewSuccessResult(result, attempt)
 		}
@@ -59,7 +81,7 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		// Check if the error should be auto-retried based on RetryPolicy
 		// RetryableError with explicit policy takes precedence
 		// Standard errors use DefaultRetryPolicy
-		if !shouldAutoRetry(err, retryParam.DefaultRetryPolicy) {
+		if !shouldAutoRetry(err, config.defaultRetryPolicy) {
 			return Result[T]{
 				value:    zero,
 				err:      err,
@@ -68,20 +90,20 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		}
 
 		// If this was the last attempt, break and return exhausted error
-		if attempt == retryParam.MaxAttempts {
+		if attempt == config.maxAttempts {
 			break
 		}
 
 		// Compute delay for the next retry using exponential backoff with jitter
 		backoffDelay := exponentialBackoffDelay(
 			attempt,
-			retryParam.Jitter,
-			retryParam.BackoffParam,
+			config.jitter,
+			config.backoff,
 		)
 
 		// Log retry attempt if debug enabled
 		if logger.Enabled() {
-			logger.LogRetry(ctx, attempt, retryParam.MaxAttempts, backoffDelay, err)
+			logger.LogRetry(ctx, attempt, config.maxAttempts, backoffDelay, err)
 		}
 
 		// Wait for backoff delay or context cancellation
@@ -103,7 +125,7 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 
 	// Log exhausted attempts if debug enabled
 	if logger.Enabled() {
-		logger.LogRetry(ctx, retryParam.MaxAttempts, retryParam.MaxAttempts, 0, lastErr)
+		logger.LogRetry(ctx, config.maxAttempts, config.maxAttempts, 0, lastErr)
 	}
 
 	// Return failure result when max attempts are exhausted
@@ -111,11 +133,11 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		value: zero,
 		err: NewRetryError(
 			ErrExhaustedAttempts,
-			fmt.Sprintf("exhausted %d attempts. Last error: %v", retryParam.MaxAttempts, lastErr),
+			fmt.Sprintf("exhausted %d attempts. Last error: %v", config.maxAttempts, lastErr),
 			RetryPolicyManual, // Exhausted auto-retry → manual retry eligible
 			lastErr,           // Preserve original error
 		),
-		attempts: retryParam.MaxAttempts,
+		attempts: config.maxAttempts,
 	}
 }
 
