@@ -49,11 +49,13 @@ func (b *BackoffParam) MaxDuration() time.Duration {
 }
 
 // computeJitter returns a pseudo-random duration between 0 and max (inclusive).
-func computeJitter(max time.Duration, rng rand.Rand) time.Duration {
+// Uses the global rand which is automatically seeded with a random value
+// at startup (Go 1.20+), ensuring different jitter values across concurrent calls.
+func computeJitter(max time.Duration) time.Duration {
 	if max <= 0 {
 		return 0
 	}
-	return time.Duration(rng.Int63n(int64(max)))
+	return time.Duration(rand.Int63n(int64(max)))
 }
 
 // exponentialBackoffDelay computes the delay for a given backoff count using
@@ -66,7 +68,6 @@ func computeJitter(max time.Duration, rng rand.Rand) time.Duration {
 func exponentialBackoffDelay(
 	backoffCount int,
 	jitter time.Duration,
-	rng rand.Rand,
 	backOffParam BackoffParam,
 ) time.Duration {
 	initialBackoff := backOffParam.InitialDuration()
@@ -82,7 +83,7 @@ func exponentialBackoffDelay(
 
 	// Add jitter only if jitter > 0
 	if jitter > 0 {
-		jitterValue := computeJitter(jitter, rng)
+		jitterValue := computeJitter(jitter)
 		delay += float64(jitterValue)
 	}
 

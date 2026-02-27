@@ -3,7 +3,6 @@ package retrier
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 )
 
@@ -38,9 +37,6 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		}
 	}
 
-	// Initialize random number generator with the provided seed
-	rng := rand.New(rand.NewSource(retryParam.RandomSeed))
-
 	for attempt := 1; attempt <= retryParam.MaxAttempts; attempt++ {
 		result, err := fn()
 
@@ -74,7 +70,6 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		backoffDelay := exponentialBackoffDelay(
 			attempt,
 			retryParam.Jitter,
-			*rng,
 			retryParam.BackoffParam,
 		)
 

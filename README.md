@@ -56,9 +56,7 @@ func main() {
     )
     
     params := retrier.NewRetryParam(
-        100*time.Millisecond, // Base delay
-        50*time.Millisecond,  // Jitter
-        42,                   // Random seed
+        50*time.Millisecond,  // Jitter (random delay added to backoff)
         5,                    // Max attempts
         backoffParam,
     )
@@ -174,9 +172,7 @@ type RetryableError interface {
 
 // RetryParam holds retry configuration
 type RetryParam struct {
-    BaseDelay    time.Duration
     Jitter       time.Duration
-    RandomSeed   int64
     MaxAttempts  int
     BackoffParam BackoffParam
 }
@@ -207,7 +203,8 @@ type DebugLogger interface {
 func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T]
 
 // NewRetryParam creates retry configuration
-func NewRetryParam(baseDelay, jitter time.Duration, randomSeed int64, maxAttempts int, backoffParam BackoffParam) RetryParam
+// Jitter uses Go's automatically-seeded global math/rand for thread-safe randomness
+func NewRetryParam(jitter time.Duration, maxAttempts int, backoffParam BackoffParam) RetryParam
 
 // NewBackoffParam creates backoff configuration
 func NewBackoffParam(initialDuration time.Duration, multiplier float64, maxDuration time.Duration) BackoffParam

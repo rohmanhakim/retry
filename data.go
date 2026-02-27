@@ -6,25 +6,19 @@ import "time"
 // These parameters are passed from outside (e.g., config) and should not
 // be known by the retry handler internally.
 type RetryParam struct {
-	BaseDelay    time.Duration
 	Jitter       time.Duration
-	RandomSeed   int64
 	MaxAttempts  int
 	BackoffParam BackoffParam
 }
 
 // NewRetryParam creates a new RetryParam with the given settings.
 func NewRetryParam(
-	baseDelay time.Duration,
 	jitter time.Duration,
-	randomSeed int64,
 	maxAttempts int,
 	backoffParam BackoffParam,
 ) RetryParam {
 	return RetryParam{
-		BaseDelay:    baseDelay,
 		Jitter:       jitter,
-		RandomSeed:   randomSeed,
 		MaxAttempts:  maxAttempts,
 		BackoffParam: backoffParam,
 	}

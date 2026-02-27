@@ -82,9 +82,7 @@ func TestRetry_SuccessOnFirstAttempt(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		100*time.Millisecond,
 		10*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -133,9 +131,7 @@ func TestRetry_PassParameter(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		100*time.Millisecond,
 		10*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -172,9 +168,7 @@ func TestRetry_SuccessAfterRetries(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		5,
 		defaultBackoffParam(),
 	)
@@ -233,9 +227,7 @@ func TestRetry_NonRetryableErrorReturnsImmediately(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		100*time.Millisecond,
 		10*time.Millisecond,
-		42,
 		5,
 		defaultBackoffParam(),
 	)
@@ -278,9 +270,7 @@ func TestRetry_ExhaustedAttempts(t *testing.T) {
 
 	maxAttempts := 3
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		maxAttempts,
 		defaultBackoffParam(),
 	)
@@ -330,9 +320,7 @@ func TestRetry_MaxAttemptsLessThanOne(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		100*time.Millisecond,
 		10*time.Millisecond,
-		42,
 		0,
 		defaultBackoffParam(),
 	)
@@ -383,9 +371,7 @@ func TestRetry_GenericTypePointer(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -424,9 +410,7 @@ func TestRetry_GenericTypeSlice(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -471,9 +455,7 @@ func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		5,
 		defaultBackoffParam(),
 	)
@@ -494,38 +476,50 @@ func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 	}
 }
 
-// TestRetry_DeterministicWithSameSeed verifies deterministic behavior with same seed
-func TestRetry_DeterministicWithSameSeed(t *testing.T) {
+// TestRetry_BackoffDelayWithinBounds verifies that backoff delay with jitter is within expected bounds
+func TestRetry_BackoffDelayWithinBounds(t *testing.T) {
+	mock := newMockLogger(true)
 	callCount := 0
-	fn := func() (int, retrier.RetryableError) {
+	fn := func() (string, retrier.RetryableError) {
 		callCount++
-		if callCount < 2 {
-			return 0, &mockError{
+		if callCount < 3 {
+			return "", &mockError{
 				msg:       "transient error",
 				retryable: true,
 			}
 		}
-		return 42, nil
+		return "success", nil
 	}
 
+	jitter := 5 * time.Millisecond
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
-		5*time.Millisecond,
-		12345,
-		3,
+		jitter,
+		5,
 		defaultBackoffParam(),
 	)
 
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+	result := retrier.Retry(context.Background(), params, mock, fn)
 
 	if result.IsFailure() {
 		t.Fatalf("expected no error, got: %v", result.Err())
 	}
-	if result.Value() != 42 {
-		t.Fatalf("expected 42, got: %d", result.Value())
-	}
-	if result.Attempts() != 2 {
-		t.Fatalf("expected 2 attempts, got: %d", result.Attempts())
+
+	// Verify backoff delays are within expected bounds
+	// Expected base delays: 10ms (attempt 1), 20ms (attempt 2)
+	// With jitter: baseDelay <= actualDelay <= baseDelay + jitter
+	expectedBaseDelays := []time.Duration{10 * time.Millisecond, 20 * time.Millisecond}
+
+	for i := 0; i < 2; i++ {
+		backoff := mock.logRetryCalls[i].backoff
+		baseDelay := expectedBaseDelays[i]
+		maxDelay := baseDelay + jitter
+
+		if backoff < baseDelay {
+			t.Errorf("Attempt %d: backoff %v is below minimum expected %v", i+1, backoff, baseDelay)
+		}
+		if backoff > maxDelay {
+			t.Errorf("Attempt %d: backoff %v exceeds maximum expected %v", i+1, backoff, maxDelay)
+		}
 	}
 }
 
@@ -545,9 +539,7 @@ func TestRetry_SuccessAfterManyFailures(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		5*time.Millisecond,
 		2*time.Millisecond,
-		42,
 		maxAttempts,
 		defaultBackoffParam(),
 	)
@@ -578,9 +570,7 @@ func TestRetry_ExhaustedErrorIsRetryable(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		2,
 		defaultBackoffParam(),
 	)
@@ -609,9 +599,7 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		2,
 		defaultBackoffParam(),
 	)
@@ -639,12 +627,10 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 
 // TestNewRetryParam verifies the constructor creates RetryParam correctly
 func TestNewRetryParam(t *testing.T) {
-	baseDelay := 100 * time.Millisecond
 	jitter := 50 * time.Millisecond
-	seed := int64(42)
 	maxAttempts := 5
 
-	params := retrier.NewRetryParam(baseDelay, jitter, seed, maxAttempts, defaultBackoffParam())
+	params := retrier.NewRetryParam(jitter, maxAttempts, defaultBackoffParam())
 
 	callCount := 0
 	fn := func() (string, retrier.RetryableError) {
@@ -676,8 +662,6 @@ func BenchmarkRetry(b *testing.B) {
 
 	params := retrier.NewRetryParam(
 		1*time.Millisecond,
-		1*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -694,9 +678,7 @@ func TestRetry_NilErrorTypeSafety(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		3,
 		defaultBackoffParam(),
 	)
@@ -723,9 +705,7 @@ func TestRetryErrorType(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		1,
 		defaultBackoffParam(),
 	)
@@ -753,9 +733,7 @@ func TestRetry_DisabledLogger(t *testing.T) {
 	}
 
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		5,
 		defaultBackoffParam(),
 	)
@@ -785,9 +763,7 @@ func TestRetry_ContextCancellation(t *testing.T) {
 
 	// Use a long backoff to ensure we can cancel during the wait
 	params := retrier.NewRetryParam(
-		10*time.Millisecond,
 		5*time.Millisecond,
-		42,
 		10,
 		retrier.NewBackoffParam(
 			1*time.Second, // Long initial duration
@@ -836,5 +812,64 @@ func TestRetry_ContextCancellation(t *testing.T) {
 	unwrapped := retryErr.Unwrap()
 	if unwrapped != context.Canceled {
 		t.Fatalf("expected unwrapped error to be context.Canceled, got: %v", unwrapped)
+	}
+}
+
+// TestRetry_JitterRandomness verifies that jitter produces different values across calls
+// This test ensures the fix for the thundering herd problem works correctly
+func TestRetry_JitterRandomness(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping randomness test in short mode")
+	}
+
+	// Collect backoff delays from multiple retry operations
+	delays := make([]time.Duration, 0, 100)
+	jitter := 10 * time.Millisecond
+	params := retrier.NewRetryParam(
+		jitter,
+		2,
+		retrier.NewBackoffParam(10*time.Millisecond, 2.0, 30*time.Second),
+	)
+
+	// Run multiple retry operations and collect first backoff delays
+	for i := 0; i < 100; i++ {
+		mock := newMockLogger(false)
+		callCount := 0
+		fn := func() (string, retrier.RetryableError) {
+			callCount++
+			if callCount == 1 {
+				return "", &mockError{msg: "error", retryable: true}
+			}
+			return "success", nil
+		}
+
+		retrier.Retry(context.Background(), params, mock, fn)
+
+		// Enable logging to capture backoff
+		mock.enabled = true
+		callCount = 0
+		result := retrier.Retry(context.Background(), params, mock, fn)
+		if result.IsSuccess() && len(mock.logRetryCalls) > 0 {
+			delays = append(delays, mock.logRetryCalls[0].backoff)
+		}
+	}
+
+	// Check that we got variation in delays (not all identical)
+	uniqueDelays := make(map[time.Duration]int)
+	for _, d := range delays {
+		uniqueDelays[d]++
+	}
+
+	// With random jitter, we should see multiple unique values
+	// If all values are the same, the jitter is deterministic (bug)
+	if len(uniqueDelays) < 10 {
+		t.Errorf("Expected at least 10 unique delay values, got %d. Jitter may not be random.", len(uniqueDelays))
+	}
+
+	// Verify all delays are within bounds [10ms, 20ms]
+	for _, d := range delays {
+		if d < 10*time.Millisecond || d > 20*time.Millisecond {
+			t.Errorf("Delay %v is outside expected bounds [10ms, 20ms]", d)
+		}
 	}
 }
