@@ -76,7 +76,7 @@ func (m *mockLogger) LogRetry(_ context.Context, attempt int, maxAttempt int, ba
 func TestRetry_SuccessOnFirstAttempt(t *testing.T) {
 	mock := newMockLogger(true)
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		return "success", nil
 	}
@@ -125,7 +125,7 @@ func TestRetry_PassParameter(t *testing.T) {
 	toPrint := "Hello"
 	callCount := 0
 
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		return fmt.Sprintf("%s, world!", toPrint), nil
 	}
@@ -156,7 +156,7 @@ func TestRetry_PassParameter(t *testing.T) {
 func TestRetry_SuccessAfterRetries(t *testing.T) {
 	mock := newMockLogger(true)
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		if callCount < 3 {
 			return "", &mockError{
@@ -221,7 +221,7 @@ func TestRetry_NonRetryableErrorReturnsImmediately(t *testing.T) {
 		retryable: false,
 	}
 
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		return "", expectedErr
 	}
@@ -260,7 +260,7 @@ func TestRetry_NonRetryableErrorReturnsImmediately(t *testing.T) {
 func TestRetry_ExhaustedAttempts(t *testing.T) {
 	mock := newMockLogger(true)
 	callCount := 0
-	fn := func() (int, retrier.RetryableError) {
+	fn := func() (int, error) {
 		callCount++
 		return 0, &mockError{
 			msg:       "persistent transient error",
@@ -291,11 +291,11 @@ func TestRetry_ExhaustedAttempts(t *testing.T) {
 	}
 
 	// Exhausted attempts should return RetryPolicyManual
-	if result.Err().RetryPolicy() != retrier.RetryPolicyManual {
-		t.Fatalf("expected error RetryPolicy to be 'RetryPolicyManual', got: %v", result.Err().RetryPolicy())
-	}
 	var retryErr *retrier.RetryError
 	errors.As(result.Err(), &retryErr)
+	if retryErr.RetryPolicy() != retrier.RetryPolicyManual {
+		t.Fatalf("expected error RetryPolicy to be 'RetryPolicyManual', got: %v", retryErr.RetryPolicy())
+	}
 	if retryErr.Cause != retrier.ErrExhaustedAttempts {
 		t.Fatalf("expected error cause 'ErrExhaustedAttempts', got: '%s'", retryErr.Cause)
 	}
@@ -315,7 +315,7 @@ func TestRetry_ExhaustedAttempts(t *testing.T) {
 // TestRetry_MaxAttemptsLessThanOne verifies that MaxAttempts < 1 returns an error
 func TestRetry_MaxAttemptsLessThanOne(t *testing.T) {
 	mock := newMockLogger(true)
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		return "success", nil
 	}
 
@@ -332,10 +332,10 @@ func TestRetry_MaxAttemptsLessThanOne(t *testing.T) {
 		t.Fatal("expected error for MaxAttempts < 1, got nil")
 	}
 	// Zero attempt is a config error -> RetryPolicyNever
-	if result.Err().RetryPolicy() != retrier.RetryPolicyNever {
-		t.Fatalf("expected error RetryPolicy to be 'RetryPolicyNever', got: %v", result.Err().RetryPolicy())
-	}
 	errors.As(result.Err(), &retryErr)
+	if retryErr.RetryPolicy() != retrier.RetryPolicyNever {
+		t.Fatalf("expected error RetryPolicy to be 'RetryPolicyNever', got: %v", retryErr.RetryPolicy())
+	}
 	if retryErr.Cause != retrier.ErrZeroAttempt {
 		t.Fatalf("expected error cause is ErrZeroAttempt, got %s", retryErr.Cause)
 	}
@@ -359,7 +359,7 @@ func TestRetry_GenericTypePointer(t *testing.T) {
 	}
 
 	callCount := 0
-	fn := func() (*Data, retrier.RetryableError) {
+	fn := func() (*Data, error) {
 		callCount++
 		if callCount < 2 {
 			return nil, &mockError{
@@ -398,7 +398,7 @@ func TestRetry_GenericTypePointer(t *testing.T) {
 // TestRetry_GenericTypeSlice verifies that Retry works with slice types
 func TestRetry_GenericTypeSlice(t *testing.T) {
 	callCount := 0
-	fn := func() ([]int, retrier.RetryableError) {
+	fn := func() ([]int, error) {
 		callCount++
 		if callCount < 2 {
 			return nil, &mockError{
@@ -431,7 +431,7 @@ func TestRetry_GenericTypeSlice(t *testing.T) {
 // TestRetry_MixedRetryableAndNonRetryable verifies behavior with mixed error types
 func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		switch callCount {
 		case 1:
@@ -480,7 +480,7 @@ func TestRetry_MixedRetryableAndNonRetryable(t *testing.T) {
 func TestRetry_BackoffDelayWithinBounds(t *testing.T) {
 	mock := newMockLogger(true)
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		if callCount < 3 {
 			return "", &mockError{
@@ -527,7 +527,7 @@ func TestRetry_BackoffDelayWithinBounds(t *testing.T) {
 func TestRetry_SuccessAfterManyFailures(t *testing.T) {
 	callCount := 0
 	maxAttempts := 10
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		if callCount < maxAttempts {
 			return "", &mockError{
@@ -560,33 +560,6 @@ func TestRetry_SuccessAfterManyFailures(t *testing.T) {
 	}
 }
 
-// TestRetry_ExhaustedErrorIsRetryable verifies that exhausted attempt error has RetryPolicyManual
-func TestRetry_ExhaustedErrorIsRetryable(t *testing.T) {
-	fn := func() (string, retrier.RetryableError) {
-		return "", &mockError{
-			msg:       "persistent error",
-			retryable: true,
-		}
-	}
-
-	params := retrier.NewRetryParam(
-		5*time.Millisecond,
-		2,
-		defaultBackoffParam(),
-	)
-
-	result := retrier.Retry(context.Background(), params, noopLogger, fn)
-
-	if result.IsSuccess() {
-		t.Fatal("expected error, got nil")
-	}
-
-	// Exhausted error should have RetryPolicyManual (eligible for manual retry)
-	if result.Err().RetryPolicy() != retrier.RetryPolicyManual {
-		t.Errorf("expected exhausted error to have RetryPolicyManual, got: %v", result.Err().RetryPolicy())
-	}
-}
-
 // TestRetry_ErrorWrapping verifies that the original error is included
 func TestRetry_ErrorWrapping(t *testing.T) {
 	originalErr := &mockError{
@@ -594,7 +567,7 @@ func TestRetry_ErrorWrapping(t *testing.T) {
 		retryable: true,
 	}
 
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		return "", originalErr
 	}
 
@@ -633,7 +606,7 @@ func TestNewRetryParam(t *testing.T) {
 	params := retrier.NewRetryParam(jitter, maxAttempts, defaultBackoffParam())
 
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		return "success", nil
 	}
@@ -656,7 +629,7 @@ func TestNewRetryParam(t *testing.T) {
 
 // BenchmarkRetry benchmarks the retry function
 func BenchmarkRetry(b *testing.B) {
-	fn := func() (int, retrier.RetryableError) {
+	fn := func() (int, error) {
 		return 42, nil
 	}
 
@@ -673,7 +646,7 @@ func BenchmarkRetry(b *testing.B) {
 }
 
 func TestRetry_NilErrorTypeSafety(t *testing.T) {
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		return "success", nil
 	}
 
@@ -697,7 +670,7 @@ func TestRetry_NilErrorTypeSafety(t *testing.T) {
 }
 
 func TestRetryErrorType(t *testing.T) {
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		return "", &mockError{
 			msg:       "some error",
 			retryable: true,
@@ -721,7 +694,7 @@ func TestRetry_DisabledLogger(t *testing.T) {
 	mock := newMockLogger(false)
 
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		if callCount < 3 {
 			return "", &mockError{
@@ -753,7 +726,7 @@ func TestRetry_DisabledLogger(t *testing.T) {
 // TestRetry_ContextCancellation verifies that context cancellation stops retry loop
 func TestRetry_ContextCancellation(t *testing.T) {
 	callCount := 0
-	fn := func() (string, retrier.RetryableError) {
+	fn := func() (string, error) {
 		callCount++
 		return "", &mockError{
 			msg:       "transient error",
@@ -835,7 +808,7 @@ func TestRetry_JitterRandomness(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		mock := newMockLogger(false)
 		callCount := 0
-		fn := func() (string, retrier.RetryableError) {
+		fn := func() (string, error) {
 			callCount++
 			if callCount == 1 {
 				return "", &mockError{msg: "error", retryable: true}
@@ -871,5 +844,259 @@ func TestRetry_JitterRandomness(t *testing.T) {
 		if d < 10*time.Millisecond || d > 20*time.Millisecond {
 			t.Errorf("Delay %v is outside expected bounds [10ms, 20ms]", d)
 		}
+	}
+}
+
+// TestRetry_StandardError_AutoRetry verifies that standard errors are auto-retried by default
+func TestRetry_StandardError_AutoRetry(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 3 {
+			return "", errors.New("standard error")
+		}
+		return "success", nil
+	}
+
+	params := retrier.NewRetryParam(
+		5*time.Millisecond,
+		5,
+		defaultBackoffParam(),
+	)
+
+	result := retrier.Retry(context.Background(), params, mock, fn)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+	if result.Value() != "success" {
+		t.Fatalf("expected 'success', got: %s", result.Value())
+	}
+	if result.Attempts() != 3 {
+		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
+	}
+	if callCount != 3 {
+		t.Fatalf("expected 3 calls, got: %d", callCount)
+	}
+}
+
+// TestRetry_StandardError_DefaultRetryPolicyNever verifies that standard errors
+// are NOT retried when DefaultRetryPolicy is set to RetryPolicyNever
+func TestRetry_StandardError_DefaultRetryPolicyNever(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+	fn := func() (string, error) {
+		callCount++
+		return "", errors.New("standard error")
+	}
+
+	params := retrier.RetryParam{
+		Jitter:             5 * time.Millisecond,
+		MaxAttempts:        5,
+		BackoffParam:       defaultBackoffParam(),
+		DefaultRetryPolicy: retrier.RetryPolicyNever,
+	}
+
+	result := retrier.Retry(context.Background(), params, mock, fn)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Attempts() != 1 {
+		t.Fatalf("expected 1 attempt (no retry), got: %d", result.Attempts())
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 call (no retry), got: %d", callCount)
+	}
+	// The standard error should be returned directly
+	if result.Err().Error() != "standard error" {
+		t.Fatalf("expected 'standard error', got: %s", result.Err().Error())
+	}
+}
+
+// TestRetry_RetryableError_TakesPrecedenceOverDefault verifies that RetryableError
+// policy always takes precedence over DefaultRetryPolicy
+func TestRetry_RetryableError_TakesPrecedenceOverDefault(t *testing.T) {
+	callCount := 0
+
+	// Create a RetryableError with RetryPolicyAuto
+	autoErr := &mockError{
+		msg:       "auto retry error",
+		retryable: true,
+	}
+
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 3 {
+			return "", autoErr
+		}
+		return "success", nil
+	}
+
+	// Even with DefaultRetryPolicy=Never, RetryableError with Auto should be retried
+	params := retrier.RetryParam{
+		Jitter:             5 * time.Millisecond,
+		MaxAttempts:        5,
+		BackoffParam:       defaultBackoffParam(),
+		DefaultRetryPolicy: retrier.RetryPolicyNever,
+	}
+
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+	if result.Attempts() != 3 {
+		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
+	}
+}
+
+// TestRetry_RetryableErrorNever_WithDefaultAuto verifies that RetryableError with
+// RetryPolicyNever stops immediately even when DefaultRetryPolicy is Auto
+func TestRetry_RetryableErrorNever_WithDefaultAuto(t *testing.T) {
+	callCount := 0
+
+	// Create a RetryableError with RetryPolicyNever
+	neverErr := &mockError{
+		msg:       "never retry error",
+		retryable: false, // Returns RetryPolicyManual which stops auto-retry
+	}
+
+	fn := func() (string, error) {
+		callCount++
+		return "", neverErr
+	}
+
+	// Even with DefaultRetryPolicy=Auto, RetryableError with Manual should NOT be retried
+	params := retrier.NewRetryParam(
+		5*time.Millisecond,
+		5,
+		defaultBackoffParam(),
+	)
+
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Attempts() != 1 {
+		t.Fatalf("expected 1 attempt (no retry), got: %d", result.Attempts())
+	}
+}
+
+// TestRetry_MixedStandardAndRetryableErrors verifies behavior with mixed error types
+func TestRetry_MixedStandardAndRetryableErrors(t *testing.T) {
+	callCount := 0
+	fn := func() (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			// Standard error - should be retried with DefaultRetryPolicy=Auto
+			return "", errors.New("standard error")
+		case 2:
+			// RetryableError with Manual - should stop
+			return "", &mockError{
+				msg:       "manual error",
+				retryable: false,
+			}
+		default:
+			return "success", nil
+		}
+	}
+
+	params := retrier.NewRetryParam(
+		5*time.Millisecond,
+		5,
+		defaultBackoffParam(),
+	)
+
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Attempts() != 2 {
+		t.Fatalf("expected 2 attempts, got: %d", result.Attempts())
+	}
+}
+
+// TestRetry_StandardError_ExhaustedAttempts verifies that exhausted standard errors
+// are wrapped properly
+func TestRetry_StandardError_ExhaustedAttempts(t *testing.T) {
+	callCount := 0
+	fn := func() (string, error) {
+		callCount++
+		return "", errors.New("persistent standard error")
+	}
+
+	params := retrier.NewRetryParam(
+		5*time.Millisecond,
+		3,
+		defaultBackoffParam(),
+	)
+
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Attempts() != 3 {
+		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
+	}
+
+	// Should be wrapped in RetryError
+	var retryErr *retrier.RetryError
+	if !errors.As(result.Err(), &retryErr) {
+		t.Fatalf("expected RetryError, got: %T", result.Err())
+	}
+	if retryErr.Cause != retrier.ErrExhaustedAttempts {
+		t.Fatalf("expected ErrExhaustedAttempts, got: %s", retryErr.Cause)
+	}
+
+	// Original error should be accessible via Unwrap
+	unwrapped := retryErr.Unwrap()
+	if unwrapped == nil {
+		t.Fatal("expected wrapped error")
+	}
+	if unwrapped.Error() != "persistent standard error" {
+		t.Fatalf("expected 'persistent standard error', got: %s", unwrapped.Error())
+	}
+}
+
+// TestRetry_ZeroFrictionHTTPExample demonstrates the ergonomic improvement
+// This is how users would use the library with standard library functions
+func TestRetry_ZeroFrictionHTTPExample(t *testing.T) {
+	// Simulate http.Get behavior
+	callCount := 0
+	httpGet := func(url string) (string, error) {
+		callCount++
+		if callCount < 3 {
+			return "", errors.New("connection timeout")
+		}
+		return "response body", nil
+	}
+
+	// The user can now pass a function that returns standard error directly!
+	fn := func() (string, error) {
+		return httpGet("https://api.example.com/data")
+	}
+
+	params := retrier.NewRetryParam(
+		5*time.Millisecond,
+		5,
+		defaultBackoffParam(),
+	)
+
+	result := retrier.Retry(context.Background(), params, noopLogger, fn)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+	if result.Value() != "response body" {
+		t.Fatalf("expected 'response body', got: %s", result.Value())
+	}
+	if result.Attempts() != 3 {
+		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
 	}
 }

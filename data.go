@@ -6,21 +6,25 @@ import "time"
 // These parameters are passed from outside (e.g., config) and should not
 // be known by the retry handler internally.
 type RetryParam struct {
-	Jitter       time.Duration
-	MaxAttempts  int
-	BackoffParam BackoffParam
+	Jitter             time.Duration
+	MaxAttempts        int
+	BackoffParam       BackoffParam
+	DefaultRetryPolicy RetryPolicy // Policy applied to standard errors (default: RetryPolicyAuto)
 }
 
 // NewRetryParam creates a new RetryParam with the given settings.
+// DefaultRetryPolicy is set to RetryPolicyAuto, meaning standard errors
+// will be automatically retried with exponential backoff.
 func NewRetryParam(
 	jitter time.Duration,
 	maxAttempts int,
 	backoffParam BackoffParam,
 ) RetryParam {
 	return RetryParam{
-		Jitter:       jitter,
-		MaxAttempts:  maxAttempts,
-		BackoffParam: backoffParam,
+		Jitter:             jitter,
+		MaxAttempts:        maxAttempts,
+		BackoffParam:       backoffParam,
+		DefaultRetryPolicy: RetryPolicyAuto,
 	}
 }
 
@@ -28,7 +32,7 @@ func NewRetryParam(
 // It holds either a successful value or an error, along with metadata about the execution.
 type Result[T any] struct {
 	value    T
-	err      RetryableError
+	err      error
 	attempts int
 }
 
@@ -38,7 +42,7 @@ func NewSuccessResult[T any](value T, attempts int) Result[T] {
 }
 
 // NewFailureResult creates a Result representing a failed retry operation.
-func NewFailureResult[T any](err RetryableError, attempts int) Result[T] {
+func NewFailureResult[T any](err error, attempts int) Result[T] {
 	var zero T
 	return Result[T]{value: zero, err: err, attempts: attempts}
 }
@@ -50,7 +54,7 @@ func (r Result[T]) Value() T {
 }
 
 // Err returns the error if the operation failed, or nil if successful.
-func (r Result[T]) Err() RetryableError {
+func (r Result[T]) Err() error {
 	return r.err
 }
 

@@ -2,13 +2,14 @@ package retrier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
 
 // Retry executes the provided function with retry logic.
 // It will retry the function up to MaxAttempts times, applying exponential backoff
-// with jitter between attempts. Only retryable errors will trigger a retry.
+// with jitter between attempts.
 //
 // Type parameter T represents the return type of the function being retried.
 // Returns a Result containing the value (if successful), error (if failed),
@@ -20,8 +21,12 @@ import (
 //
 // The logger parameter provides debug logging capabilities. When debug mode is
 // disabled (NoOpLogger), there is zero overhead from logging.
-func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T] {
-	var lastErr RetryableError
+//
+// Error handling:
+//   - If the error implements RetryableError, its RetryPolicy() is used
+//   - Standard errors use DefaultRetryPolicy from RetryParam (defaults to RetryPolicyAuto)
+func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, error)) Result[T] {
+	var lastErr error
 	var zero T
 
 	if retryParam.MaxAttempts < 1 {
@@ -52,8 +57,9 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 		lastErr = err
 
 		// Check if the error should be auto-retried based on RetryPolicy
-		// Only RetryPolicyAuto errors trigger automatic retry with exponential backoff
-		if !shouldAutoRetry(err) {
+		// RetryableError with explicit policy takes precedence
+		// Standard errors use DefaultRetryPolicy
+		if !shouldAutoRetry(err, retryParam.DefaultRetryPolicy) {
 			return Result[T]{
 				value:    zero,
 				err:      err,
@@ -114,8 +120,13 @@ func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger
 }
 
 // shouldAutoRetry determines whether an error should trigger automatic retry.
-// It checks the error's RetryPolicy: only RetryPolicyAuto triggers automatic retry.
-// This is the primary method for retry decision-making in the retry handler.
-func shouldAutoRetry(err RetryableError) bool {
-	return err.RetryPolicy() == RetryPolicyAuto
+// If the error implements RetryableError, its RetryPolicy() is used.
+// Otherwise, the defaultPolicy is applied.
+func shouldAutoRetry(err error, defaultPolicy RetryPolicy) bool {
+	var retryErr RetryableError
+	if errors.As(err, &retryErr) {
+		return retryErr.RetryPolicy() == RetryPolicyAuto
+	}
+	// Standard error: use default policy
+	return defaultPolicy == RetryPolicyAuto
 }

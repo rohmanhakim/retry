@@ -8,9 +8,11 @@ A simple, standalone Go package for retrying operations with exponential backoff
 ## Features
 
 - **Generic API**: Works with any return type using Go generics
+- **Zero Friction**: Accepts standard `error` - works seamlessly with stdlib and third-party packages
 - **Exponential Backoff**: Configurable backoff with multiplier and max duration
 - **Jitter Support**: Add randomness to backoff delays to avoid thundering herd
-- **Custom Retry Policies**: Control which errors should be retried automatically
+- **Flexible Retry Policies**: Control which errors should be retried automatically
+- **Default Retry Policy**: Configure default behavior for standard errors
 - **Context Cancellation**: Support for graceful cancellation during backoff delays
 - **Debug Logging**: Optional logging interface for observability
 - **Zero Dependencies**: Uses only Go standard library
@@ -29,23 +31,11 @@ package main
 import (
     "context"
     "fmt"
+    "net/http"
     "time"
     
     "github.com/rohmanhakim/retrier"
 )
-
-// Define a custom error that implements RetryableError
-type NetworkError struct {
-    msg string
-}
-
-func (e *NetworkError) Error() string {
-    return e.msg
-}
-
-func (e *NetworkError) RetryPolicy() retrier.RetryPolicy {
-    return retrier.RetryPolicyAuto // Will be retried automatically
-}
 
 func main() {
     // Configure retry parameters
@@ -61,12 +51,9 @@ func main() {
         backoffParam,
     )
     
-    // Define the operation to retry
-    fn := func() (string, retrier.RetryableError) {
-        // Your operation here
-        // Return RetryPolicyAuto error for transient failures
-        // Return RetryPolicyManual or RetryPolicyNever for permanent failures
-        return "success", nil
+    // Define the operation to retry - just return standard errors!
+    fn := func() (*http.Response, error) {
+        return http.Get("https://api.example.com/data")
     }
     
     // Execute with retry (context can be cancelled to abort mid-backoff)
@@ -74,12 +61,86 @@ func main() {
     result := retrier.Retry(ctx, params, retrier.NewNoOpLogger(), fn)
     
     if result.IsSuccess() {
-        fmt.Printf("Success: %s (attempts: %d)\n", result.Value(), result.Attempts())
+        fmt.Printf("Success: %v (attempts: %d)\n", result.Value(), result.Attempts())
     } else {
         fmt.Printf("Failed: %v (attempts: %d)\n", result.Err(), result.Attempts())
     }
 }
 ```
+
+## Error Handling
+
+### Standard Errors (Default Behavior)
+
+By default, standard errors are automatically retried with exponential backoff:
+
+```go
+fn := func() (string, error) {
+    // Standard error - will be auto-retried
+    return "", errors.New("connection timeout")
+}
+```
+
+### Custom Retry Behavior
+
+For fine-grained control, implement the `RetryableError` interface:
+
+```go
+type NetworkError struct {
+    msg       string
+    transient bool
+}
+
+func (e *NetworkError) Error() string {
+    return e.msg
+}
+
+func (e *NetworkError) RetryPolicy() retrier.RetryPolicy {
+    if e.transient {
+        return retrier.RetryPolicyAuto    // Auto retry with backoff
+    }
+    return retrier.RetryPolicyNever       // Don't retry
+}
+
+// Usage
+fn := func() (string, error) {
+    // This error will be auto-retried because it implements RetryPolicyAuto
+    return "", &NetworkError{msg: "timeout", transient: true}
+}
+```
+
+### Default Retry Policy
+
+Configure the default behavior for standard errors via `RetryParam.DefaultRetryPolicy`:
+
+```go
+// Fail-fast mode: Only retry errors that explicitly implement RetryableError with RetryPolicyAuto
+params := retrier.RetryParam{
+    Jitter:              50 * time.Millisecond,
+    MaxAttempts:         5,
+    BackoffParam:        backoffParam,
+    DefaultRetryPolicy:  retrier.RetryPolicyNever,  // Standard errors won't be retried
+}
+```
+
+## Retry Policies
+
+| Policy | Description |
+|--------|-------------|
+| `RetryPolicyAuto` | Error will be retried automatically with exponential backoff |
+| `RetryPolicyManual` | Error should not be auto-retried, but is eligible for manual retry |
+| `RetryPolicyNever` | Permanent failure, should not be retried at all |
+
+### Behavior Matrix
+
+| Error Type | `DefaultRetryPolicy=Auto` (default) | `DefaultRetryPolicy=Never` |
+|------------|-------------------------------------|----------------------------|
+| Standard `error` | ✅ Auto-retry | ❌ Stop immediately |
+| `RetryableError(Auto)` | ✅ Auto-retry | ✅ Auto-retry |
+| `RetryableError(Manual)` | ❌ Stop immediately | ❌ Stop immediately |
+| `RetryableError(Never)` | ❌ Stop immediately | ❌ Stop immediately |
+
+**Key insight**: `RetryableError` always takes precedence over `DefaultRetryPolicy`.
 
 ## Context Cancellation
 
@@ -93,38 +154,6 @@ result := retrier.Retry(ctx, params, logger, fn)
 
 if errors.Is(result.Err(), context.Canceled) {
     // Handle cancellation
-}
-```
-
-## Retry Policies
-
-The package supports three retry policies:
-
-| Policy | Description |
-|--------|-------------|
-| `RetryPolicyAuto` | Error will be retried automatically with exponential backoff |
-| `RetryPolicyManual` | Error should not be auto-retried, but is eligible for manual retry |
-| `RetryPolicyNever` | Permanent failure, should not be retried at all |
-
-## Implementing RetryableError
-
-To control retry behavior, implement the `RetryableError` interface on your error types:
-
-```go
-type MyError struct {
-    msg       string
-    transient bool
-}
-
-func (e *MyError) Error() string {
-    return e.msg
-}
-
-func (e *MyError) RetryPolicy() retrier.RetryPolicy {
-    if e.transient {
-        return retrier.RetryPolicyAuto
-    }
-    return retrier.RetryPolicyNever
 }
 ```
 
@@ -164,7 +193,8 @@ const (
     RetryPolicyNever                     // No retry
 )
 
-// RetryableError interface for error classification
+// RetryableError interface for fine-grained retry control
+// Optional: standard errors use DefaultRetryPolicy
 type RetryableError interface {
     error
     RetryPolicy() RetryPolicy
@@ -172,9 +202,10 @@ type RetryableError interface {
 
 // RetryParam holds retry configuration
 type RetryParam struct {
-    Jitter       time.Duration
-    MaxAttempts  int
-    BackoffParam BackoffParam
+    Jitter              time.Duration
+    MaxAttempts         int
+    BackoffParam        BackoffParam
+    DefaultRetryPolicy  RetryPolicy  // Default: RetryPolicyAuto
 }
 
 // Result holds the outcome of a retry operation
@@ -200,10 +231,10 @@ type DebugLogger interface {
 
 ```go
 // Retry executes fn with retry logic
-func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, RetryableError)) Result[T]
+// Accepts standard error - works with any function!
+func Retry[T any](ctx context.Context, retryParam RetryParam, logger DebugLogger, fn func() (T, error)) Result[T]
 
-// NewRetryParam creates retry configuration
-// Jitter uses Go's automatically-seeded global math/rand for thread-safe randomness
+// NewRetryParam creates retry configuration with DefaultRetryPolicy=Auto
 func NewRetryParam(jitter time.Duration, maxAttempts int, backoffParam BackoffParam) RetryParam
 
 // NewBackoffParam creates backoff configuration
@@ -212,7 +243,7 @@ func NewBackoffParam(initialDuration time.Duration, multiplier float64, maxDurat
 // NewNoOpLogger creates a no-op logger (zero overhead)
 func NewNoOpLogger() *NoOpLogger
 
-// NewRetryError creates a retry error
+// NewRetryError creates a retry error (use when you need explicit retry control)
 func NewRetryError(cause RetryErrorCause, message string, policy RetryPolicy, wrapped error) *RetryError
 ```
 
