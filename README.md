@@ -54,12 +54,57 @@ func main() {
         retrier.WithMaxDuration(30*time.Second),
     )
     
-    if result.IsSuccess() {
-        fmt.Printf("Success: %v (attempts: %d)\n", result.Value(), result.Attempts())
-    } else {
-        fmt.Printf("Failed: %v (attempts: %d)\n", result.Err(), result.Attempts())
+    // Style 1: Idiomatic Go (multiple return values)
+    value, attempts, err := result.Decompose()
+    if err != nil {
+        fmt.Printf("Failed after %d attempts: %v\n", attempts, err)
+        return
     }
+    fmt.Printf("Success: %v (attempts: %d)\n", value, attempts)
 }
+```
+
+### Result Methods
+
+The `Result[T]` type provides multiple ways to access the outcome:
+
+#### Decompose() - Idiomatic Go
+
+Returns a tuple for traditional error handling:
+
+```go
+value, attempts, err := retrier.Retry(ctx, logger, fn).Decompose()
+if err != nil {
+    return fmt.Errorf("failed after %d attempts: %w", attempts, err)
+}
+```
+
+#### UnwrapOr() - Fallback Pattern
+
+Returns the value or a default if failed. Perfect for configuration loading:
+
+```go
+// Beautiful, safe fallback logic in one line
+cacheTTL := retrier.Retry(ctx, logger, fetchRemoteConfig).UnwrapOr(defaultTTL)
+```
+
+#### Unwrap() - Panic on Failure
+
+Returns the value or panics. Use only when failure should crash:
+
+```go
+value := retrier.Retry(ctx, logger, fn).Unwrap()
+```
+
+#### Classic Methods
+
+```go
+result := retrier.Retry(ctx, logger, fn)
+result.IsSuccess()   // bool
+result.IsFailure()   // bool
+result.Value()       // T (zero value if failed)
+result.Err()         // error (nil if succeeded)
+result.Attempts()    // int
 ```
 
 ## Configuration Options
@@ -236,6 +281,16 @@ type Result[T any] struct {
     // Contains error on failure, nil on success
     // Number of attempts made
 }
+
+// Result methods
+func (r Result[T]) Decompose() (T, int, error)  // Returns tuple for idiomatic Go
+func (r Result[T]) UnwrapOr(default T) T        // Returns value or default
+func (r Result[T]) Unwrap() T                   // Returns value or panics
+func (r Result[T]) IsSuccess() bool             // true if succeeded
+func (r Result[T]) IsFailure() bool             // true if failed
+func (r Result[T]) Value() T                    // value (zero if failed)
+func (r Result[T]) Err() error                  // error (nil if succeeded)
+func (r Result[T]) Attempts() int               // number of attempts
 
 // DebugLogger interface for logging
 type DebugLogger interface {

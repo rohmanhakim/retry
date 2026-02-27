@@ -1,6 +1,9 @@
 package retrier
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // retryConfig holds the internal configuration for retry logic.
 // It is populated via functional options.
@@ -126,4 +129,35 @@ func (r Result[T]) IsSuccess() bool {
 // IsFailure returns true if the operation failed (has error).
 func (r Result[T]) IsFailure() bool {
 	return r.err != nil
+}
+
+// Decompose returns the result as a tuple (value, attempts, error).
+// This provides idiomatic Go error handling for traditionalists:
+//
+//	value, attempts, err := retrier.Retry(ctx, logger, fn).Decompose()
+//	if err != nil {
+//	    // handle error
+//	}
+func (r Result[T]) Decompose() (T, int, error) {
+	return r.value, r.attempts, r.err
+}
+
+// UnwrapOr returns the successful value, or the provided default if failed.
+// Perfect for fallback configurations:
+//
+//	cacheTTL := retrier.Retry(ctx, logger, fetchRemoteConfig).UnwrapOr(defaultTTL)
+func (r Result[T]) UnwrapOr(defaultValue T) T {
+	if r.err != nil {
+		return defaultValue
+	}
+	return r.value
+}
+
+// Unwrap returns the successful value or panics if failed.
+// Use only when failure is impossible or should crash.
+func (r Result[T]) Unwrap() T {
+	if r.err != nil {
+		panic(fmt.Sprintf("unwrap called on failed result: %v", r.err))
+	}
+	return r.value
 }
