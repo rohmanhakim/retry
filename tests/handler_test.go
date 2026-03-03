@@ -50,6 +50,7 @@ type logRetryCall struct {
 	maxAttempt int
 	backoff    time.Duration
 	err        error
+	attrs      []any
 }
 
 func newMockLogger(enabled bool) *mockLogger {
@@ -63,12 +64,13 @@ func (m *mockLogger) Enabled() bool {
 	return m.enabled
 }
 
-func (m *mockLogger) LogRetry(_ context.Context, attempt int, maxAttempt int, backoff time.Duration, err error, _ ...any) {
+func (m *mockLogger) LogRetry(_ context.Context, attempt int, maxAttempt int, backoff time.Duration, err error, attrs ...any) {
 	m.logRetryCalls = append(m.logRetryCalls, logRetryCall{
 		attempt:    attempt,
 		maxAttempt: maxAttempt,
 		backoff:    backoff,
 		err:        err,
+		attrs:      attrs,
 	})
 }
 

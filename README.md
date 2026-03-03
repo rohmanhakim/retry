@@ -121,6 +121,7 @@ The `Retry` function accepts functional options for configuration. All options h
 | `WithMultiplier(m float64)` | Backoff multiplier | 2.0 |
 | `WithMaxDuration(d time.Duration)` | Maximum backoff duration | 1 minute |
 | `WithRetryPolicy(p RetryPolicy)` | Default retry policy for standard errors | RetryPolicyAuto |
+| `WithLogAttrs(attrs ...any)` | Additional attributes for structured logging | none |
 
 ### Using Defaults
 
@@ -374,6 +375,7 @@ func WithInitialDuration(d time.Duration) RetryOption
 func WithMultiplier(m float64) RetryOption
 func WithMaxDuration(d time.Duration) RetryOption
 func WithRetryPolicy(p RetryPolicy) RetryOption
+func WithLogAttrs(attrs ...any) RetryOption
 
 // NewNoOpLogger creates a no-op logger (zero overhead)
 func NewNoOpLogger() *NoOpLogger

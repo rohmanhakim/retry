@@ -12,6 +12,7 @@ type retryConfig struct {
 	maxAttempts        int
 	backoff            backoffConfig
 	defaultRetryPolicy RetryPolicy
+	attrs              []any
 }
 
 // backoffConfig holds the internal configuration for exponential backoff.
@@ -83,6 +84,16 @@ func WithMaxDuration(d time.Duration) RetryOption {
 func WithRetryPolicy(p RetryPolicy) RetryOption {
 	return func(c *retryConfig) {
 		c.defaultRetryPolicy = p
+	}
+}
+
+// WithLogAttrs sets additional attributes to be passed to the logger.
+// Attributes follow Go's slog convention for structured logging - alternating
+// key-value pairs (string, any, string, any, ...).
+// These attributes are passed to LogRetry calls for structured logging context.
+func WithLogAttrs(attrs ...any) RetryOption {
+	return func(c *retryConfig) {
+		c.attrs = attrs
 	}
 }
 

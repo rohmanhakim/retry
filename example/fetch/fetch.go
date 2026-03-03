@@ -51,10 +51,11 @@ func main() {
 	// Execute with retry
 	ctx := context.Background()
 	result := retrier.Retry(ctx, logger, fn,
-		retrier.WithMaxAttempts(4),                        // Try up to 4 times
-		retrier.WithInitialDuration(500*time.Millisecond), // Start with 500ms backoff
-		retrier.WithMultiplier(2.0),                       // Double the backoff each time
-		retrier.WithJitter(100*time.Millisecond),          // Add some randomness
+		retrier.WithMaxAttempts(4),                                      // Try up to 4 times
+		retrier.WithInitialDuration(500*time.Millisecond),               // Start with 500ms backoff
+		retrier.WithMultiplier(2.0),                                     // Double the backoff each time
+		retrier.WithJitter(100*time.Millisecond),                        // Add some randomness
+		retrier.WithLogAttrs("operation", "fetch_url", "url", fetchURL), // Add context to logs
 	)
 
 	fmt.Println()

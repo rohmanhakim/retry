@@ -71,7 +71,7 @@ func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error),
 		if err == nil {
 			// Log successful retry if debug enabled
 			if logger.Enabled() {
-				logger.LogRetry(ctx, attempt, config.maxAttempts, 0, nil)
+				logger.LogRetry(ctx, attempt, config.maxAttempts, 0, nil, config.attrs...)
 			}
 			return NewSuccessResult(result, attempt)
 		}
@@ -103,7 +103,7 @@ func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error),
 
 		// Log retry attempt if debug enabled
 		if logger.Enabled() {
-			logger.LogRetry(ctx, attempt, config.maxAttempts, backoffDelay, err)
+			logger.LogRetry(ctx, attempt, config.maxAttempts, backoffDelay, err, config.attrs...)
 		}
 
 		// Wait for backoff delay or context cancellation
@@ -125,7 +125,7 @@ func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error),
 
 	// Log exhausted attempts if debug enabled
 	if logger.Enabled() {
-		logger.LogRetry(ctx, config.maxAttempts, config.maxAttempts, 0, lastErr)
+		logger.LogRetry(ctx, config.maxAttempts, config.maxAttempts, 0, lastErr, config.attrs...)
 	}
 
 	// Return failure result when max attempts are exhausted
