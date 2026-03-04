@@ -29,3 +29,4 @@ Thumbs.db
 # Added by goreleaser init:
 dist/
 example/fetch/fetch
+example/rate_limit/rate_limit

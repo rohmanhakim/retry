@@ -63,7 +63,7 @@ func (s *FakeServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Return success after N failures
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("Success after %d attempts! 🎉", attemptNum)))
+	w.Write([]byte(fmt.Sprintf("Success after %d attempts!", attemptNum)))
 }
 
 // Stop gracefully shuts down the server.

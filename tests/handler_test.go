@@ -1109,3 +1109,227 @@ func TestRetry_DefaultValues(t *testing.T) {
 		t.Fatalf("expected 1 attempt, got: %d", result.Attempts())
 	}
 }
+
+// mockErrorWithDelay implements both RetryableError and DelaySuggestioner for testing
+type mockErrorWithDelay struct {
+	msg            string
+	retryable      bool
+	suggestedDelay time.Duration
+}
+
+func (m *mockErrorWithDelay) Error() string {
+	return m.msg
+}
+
+func (m *mockErrorWithDelay) RetryPolicy() retrier.RetryPolicy {
+	if m.retryable {
+		return retrier.RetryPolicyAuto
+	}
+	return retrier.RetryPolicyManual
+}
+
+func (m *mockErrorWithDelay) SuggestedDelay() time.Duration {
+	return m.suggestedDelay
+}
+
+// TestRetry_DelaySuggestioner_RespectsServerDelay verifies that the suggested delay
+// is used when it's greater than the calculated backoff
+func TestRetry_DelaySuggestioner_RespectsServerDelay(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+
+	// Server suggests 100ms delay (longer than our 10ms initial)
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 2 {
+			return "", &mockErrorWithDelay{
+				msg:            "rate limited",
+				retryable:      true,
+				suggestedDelay: 100 * time.Millisecond,
+			}
+		}
+		return "success", nil
+	}
+
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(3),
+		retrier.WithInitialDuration(10 * time.Millisecond), // much smaller than suggested
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
+
+	start := time.Now()
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
+	elapsed := time.Since(start)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+
+	// Verify backoff was at least 100ms (server delay), not 10ms (initial)
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("expected delay >= 100ms (server suggested), got %v", elapsed)
+	}
+
+	// Verify the logged backoff reflects server delay
+	if len(mock.logRetryCalls) > 0 {
+		backoff := mock.logRetryCalls[0].backoff
+		if backoff < 100*time.Millisecond {
+			t.Errorf("expected logged backoff >= 100ms, got %v", backoff)
+		}
+	}
+}
+
+// TestRetry_DelaySuggestioner_ZeroDelayUsesCalculated verifies that zero suggested delay
+// falls back to calculated backoff
+func TestRetry_DelaySuggestioner_ZeroDelayUsesCalculated(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 2 {
+			return "", &mockErrorWithDelay{
+				msg:            "error with zero delay",
+				retryable:      true,
+				suggestedDelay: 0, // No suggestion
+			}
+		}
+		return "success", nil
+	}
+
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(3),
+		retrier.WithInitialDuration(50 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
+
+	start := time.Now()
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
+	elapsed := time.Since(start)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+
+	// Should use calculated backoff (~50ms), not 0
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("expected delay >= 50ms (calculated), got %v", elapsed)
+	}
+}
+
+// TestRetry_DelaySuggestioner_CalculatedWins verifies that when calculated backoff
+// is greater than server delay, calculated backoff is used
+func TestRetry_DelaySuggestioner_CalculatedWins(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+
+	// Server suggests 10ms, but our initial is 100ms
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 2 {
+			return "", &mockErrorWithDelay{
+				msg:            "rate limited",
+				retryable:      true,
+				suggestedDelay: 10 * time.Millisecond, // Smaller than initial
+			}
+		}
+		return "success", nil
+	}
+
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(3),
+		retrier.WithInitialDuration(100 * time.Millisecond), // Larger than suggested
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
+
+	start := time.Now()
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
+	elapsed := time.Since(start)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+
+	// Should use calculated backoff (100ms), which is max(10ms, 100ms) = 100ms
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("expected delay >= 100ms (calculated > server), got %v", elapsed)
+	}
+}
+
+// TestRetry_DelaySuggestioner_WithRetryableError verifies that an error implementing
+// both RetryableError and DelaySuggestioner works correctly
+func TestRetry_DelaySuggestioner_WithRetryableError(t *testing.T) {
+	mock := newMockLogger(true)
+	callCount := 0
+
+	fn := func() (string, error) {
+		callCount++
+		if callCount < 3 {
+			return "", &mockErrorWithDelay{
+				msg:            "rate limited with retry-after",
+				retryable:      true,
+				suggestedDelay: 50 * time.Millisecond,
+			}
+		}
+		return "success", nil
+	}
+
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
+
+	result := retrier.Retry(context.Background(), mock, fn, opts...)
+
+	if result.IsFailure() {
+		t.Fatalf("expected no error, got: %v", result.Err())
+	}
+	if result.Attempts() != 3 {
+		t.Fatalf("expected 3 attempts, got: %d", result.Attempts())
+	}
+
+	// First backoff should respect server delay (50ms)
+	if len(mock.logRetryCalls) > 0 {
+		firstBackoff := mock.logRetryCalls[0].backoff
+		if firstBackoff < 50*time.Millisecond {
+			t.Errorf("expected first backoff >= 50ms, got %v", firstBackoff)
+		}
+	}
+}
+
+// TestRetry_DelaySuggestioner_NonRetryableStopsImmediately verifies that DelaySuggestioner
+// alone doesn't cause retries - RetryableError is still required
+func TestRetry_DelaySuggestioner_NonRetryableStopsImmediately(t *testing.T) {
+	callCount := 0
+
+	fn := func() (string, error) {
+		callCount++
+		return "", &mockErrorWithDelay{
+			msg:            "non-retryable with delay",
+			retryable:      false, // Not retryable
+			suggestedDelay: 100 * time.Millisecond,
+		}
+	}
+
+	opts := []retrier.RetryOption{
+		retrier.WithMaxAttempts(5),
+		retrier.WithInitialDuration(10 * time.Millisecond),
+		retrier.WithMultiplier(2.0),
+		retrier.WithMaxDuration(30 * time.Second),
+	}
+
+	result := retrier.Retry(context.Background(), noopLogger, fn, opts...)
+
+	if result.IsSuccess() {
+		t.Fatal("expected error, got nil")
+	}
+	// Should stop immediately - not retryable
+	if result.Attempts() != 1 {
+		t.Fatalf("expected 1 attempt (non-retryable), got: %d", result.Attempts())
+	}
+}

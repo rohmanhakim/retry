@@ -16,7 +16,7 @@ A simple, standalone Go package for retrying operations with exponential backoff
 - **Default Retry Policy**: Configure default behavior for standard errors
 - **Context Cancellation**: Support for graceful cancellation during backoff delays
 - **Debug Logging**: Optional logging interface for observability
-- **Zero Dependencies**: Uses only Go standard library
+- **Server-Suggested Delay**: Respect server backoff hints (e.g., HTTP `Retry-After`, gRPC `retry-info`)
 
 ## Installation
 
@@ -196,6 +196,45 @@ result := retrier.Retry(ctx, logger, fn,
 )
 ```
 
+### Server-Suggested Delay
+
+For protocols that communicate backoff delays (like HTTP 429 with `Retry-After`), implement the `DelaySuggestioner` interface:
+
+```go
+type RateLimitError struct {
+    StatusCode  int
+    RetryAfter  time.Duration
+}
+
+func (e *RateLimitError) Error() string {
+    return fmt.Sprintf("HTTP %d: Rate limited", e.StatusCode)
+}
+
+func (e *RateLimitError) RetryPolicy() retrier.RetryPolicy {
+    return retrier.RetryPolicyAuto
+}
+
+func (e *RateLimitError) SuggestedDelay() time.Duration {
+    return e.RetryAfter
+}
+
+// Usage - the backoff will respect the server's suggested delay
+fn := func() (*http.Response, error) {
+    resp, err := http.Get("https://api.example.com")
+    if err != nil {
+        return nil, err
+    }
+    if resp.StatusCode == 429 {
+        retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+        resp.Body.Close()
+        return nil, &RateLimitError{StatusCode: 429, RetryAfter: retryAfter}
+    }
+    return resp, nil
+}
+```
+
+The delay calculation uses `max(serverDelay, calculatedBackoff)` for the initial attempt, ensuring the server's suggestion is respected while still applying exponential backoff for subsequent retries.
+
 ## Retry Policies
 
 | Policy | Description |
@@ -208,10 +247,10 @@ result := retrier.Retry(ctx, logger, fn,
 
 | Error Type | `DefaultRetryPolicy=Auto` (default) | `DefaultRetryPolicy=Never` |
 |------------|-------------------------------------|----------------------------|
-| Standard `error` | ✅ Auto-retry | ❌ Stop immediately |
-| `RetryableError(Auto)` | ✅ Auto-retry | ✅ Auto-retry |
-| `RetryableError(Manual)` | ❌ Stop immediately | ❌ Stop immediately |
-| `RetryableError(Never)` | ❌ Stop immediately | ❌ Stop immediately |
+| Standard `error` | Auto-retry | Stop immediately |
+| `RetryableError(Auto)` | Auto-retry | Auto-retry |
+| `RetryableError(Manual)` | Stop immediately | Stop immediately |
+| `RetryableError(Never)` | Stop immediately | Stop immediately |
 
 **Key insight**: `RetryableError` always takes precedence over `DefaultRetryPolicy`.
 
@@ -337,6 +376,13 @@ type RetryableError interface {
     RetryPolicy() RetryPolicy
 }
 
+// DelaySuggestioner interface for server-suggested backoff delays
+// Useful for HTTP 429 Retry-After, gRPC retry-info, etc.
+type DelaySuggestioner interface {
+    error
+    SuggestedDelay() time.Duration
+}
+
 // Result holds the outcome of a retry operation
 type Result[T any] struct {
     // Contains value on success, zero value on failure
@@ -386,41 +432,53 @@ func NewRetryError(cause RetryErrorCause, message string, policy RetryPolicy, wr
 
 ## Examples
 
+### Basic Retry with Backoff
+
 A complete, runnable example is available in the `example/fetch/` directory that demonstrates:
 
 - **Fake HTTP Server**: A server that simulates failures on initial attempts, then succeeds
 - **Retry with Backoff**: Exponential backoff with jitter for failed requests
 - **Custom Logger**: A simple logger implementation showing retry progress
 
-### Running the Example
-
 ```bash
 cd example/fetch && go run .
 ```
 
-### Example Output
+### Rate Limit with Retry-After
+
+Located in `example/rate_limit/` - demonstrates handling HTTP 429 responses with `Retry-After` headers:
+
+- **429 Rate Limit Responses**: Server returns rate limit errors with `Retry-After` header
+- **DelaySuggestioner Interface**: Custom error type implementing both `RetryableError` and `DelaySuggestioner`
+- **Server Delay Respected**: Backoff uses `max(serverDelay, calculatedBackoff)`
+
+```bash
+cd example/rate_limit && go run .
+```
+
+### Example Output (Basic)
 
 ```
 === Retrier Example: HTTP Fetch with Retry ===
 
-🚀 Fake server started on http://localhost:8080
-   Will fail 3 attempt(s) before succeeding...
+Fake server started on http://localhost:8080
+Will fail 3 attempt(s) before succeeding...
 
-📥 Received request #1
-[15:26:07.616] ❌ Attempt 1/4 failed: HTTP 500: Simulated failure - attempt 1
+ Received request #1
+[15:26:07.616] Attempt 1/4 failed: HTTP 500: Simulated failure - attempt 1
 [15:26:07.616]    ↳ Retrying in 503.052992ms...
-📥 Received request #2
-[15:26:08.120] ❌ Attempt 2/4 failed: HTTP 500: Simulated failure - attempt 2
+ Received request #2
+[15:26:08.120] Attempt 2/4 failed: HTTP 500: Simulated failure - attempt 2
 [15:26:08.120]    ↳ Retrying in 1.03579938s...
-📥 Received request #3
-[15:26:09.156] ❌ Attempt 3/4 failed: HTTP 500: Simulated failure - attempt 3
+ Received request #3
+[15:26:09.156] Attempt 3/4 failed: HTTP 500: Simulated failure - attempt 3
 [15:26:09.156]    ↳ Retrying in 2.039603414s...
-📥 Received request #4
-[15:26:11.197] ✅ Success on attempt 4/4
+ Received request #4
+[15:26:11.197] Success on attempt 4/4
 
 === Result ===
-✅ Success after 4 attempt(s)
-📄 Response: Success after 4 attempts! 🎉
+ Success after 4 attempt(s)
+ Response: Success after 4 attempts!
 ```
 
 ## License

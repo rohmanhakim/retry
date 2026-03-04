@@ -107,7 +107,15 @@ func Retry[T any](ctx context.Context, logger DebugLogger, fn func() (T, error),
 			config.maxDuration,
 			config.multiplier,
 		)
-		backoffDelay := exponentialbackoff.CalculateDelay(attempt, config.jitter, backoffConfig)
+
+		// Check for server-suggested delay (e.g., HTTP Retry-After, gRPC retry-info)
+		var serverDelay time.Duration
+		if ds, ok := lastErr.(DelaySuggestioner); ok {
+			serverDelay = ds.SuggestedDelay()
+		}
+
+		backoffDelay := exponentialbackoff.CalculateDelay(attempt, config.jitter, backoffConfig,
+			exponentialbackoff.WithServerDelay(serverDelay))
 
 		// Log retry attempt if debug enabled
 		if logger.Enabled() {

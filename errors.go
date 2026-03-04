@@ -1,7 +1,10 @@
 // Package retrier provides a generic retry mechanism with exponential backoff and jitter.
 package retrier
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // RetryPolicy defines automatic retry behavior.
 // This controls whether Retry() will attempt exponential backoff.
@@ -29,6 +32,20 @@ type RetryableError interface {
 	// RetryPolicy controls automatic retry behavior.
 	// Used by the retry handler to decide whether to retry.
 	RetryPolicy() RetryPolicy
+}
+
+// DelaySuggestioner is an optional interface that errors can implement
+// to suggest a backoff delay. This is useful for protocols that communicate
+// backoff hints, such as HTTP 429 with Retry-After header or gRPC retry-info.
+//
+// When an error implements this interface, the suggested delay is used as
+// the minimum backoff for the initial attempt: max(serverDelay, calculatedBackoff).
+type DelaySuggestioner interface {
+	error
+
+	// SuggestedDelay returns the delay suggested by the server or protocol.
+	// Return 0 if no delay is suggested (use calculated backoff).
+	SuggestedDelay() time.Duration
 }
 
 // RetryErrorCause represents the cause of a retry error.
